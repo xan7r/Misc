@@ -210,8 +210,17 @@ function List-LastLogonTime
     .PARAMETER UserName
         Username of account being searched.  Wildcards are accepted
 
+    .PARAMETER GroupName
+        Get LastLogon time of all users in a domain group.  Wildcards are accepted
+
+    .PARAMETER SearchForest
+        Switch to query ALL DCs in the forest, instead of just the user's domain
+
     .PARAMETER Domain
         Domain to search for user in, if blank then defaults to current domain.
+
+    .PARAMETER LastDay
+        Switch to only display LastLogon Times within the past 24 hours.
 
     .EXAMPLE
         List-LastLogonTimes -UserName john.Smith
@@ -235,7 +244,11 @@ function List-LastLogonTime
 
         [Parameter(Mandatory=$False)]
         [String]
-        $Domain
+        $Domain,
+
+        [Parameter(Mandatory=$False)]
+        [Switch]
+        $LastDay
     )
 
     $DClist = New-Object System.Collections.ArrayList
@@ -299,7 +312,33 @@ function List-LastLogonTime
             $timestamp = Get-NetUser -UserName $user -Domain $Domain -DomainController $DCName
             $LastLogon = $timestamp.LastLogon
 
-            Write-Output "$DCName`: $LastLogon"
+            if ( $LastDay )
+            {
+                try 
+                {
+                    $timeDiffDays = ((Get-Date) - $LastLogon).Days
+                    $timeDiffHours = ((Get-Date) - $LastLogon).Hours
+
+                    # unused code that further restricts $LastDay paremeter to only show the last 8 hours.  Uncomment if needed
+                    #if ( ($timeDiffDays -eq 0) -and ($timeDiffHours -le 8) )
+
+                    if ($timeDiffDays -lt 1)
+                    {
+                        Write-Output "$DCName`: $LastLogon"
+                    }
+                }
+                catch 
+                {
+                    continue
+                }
+                
+                
+            }
+            else
+            {
+                Write-Output "$DCName`: $LastLogon"
+            }
+            
         }
     }
 }
