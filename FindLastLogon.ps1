@@ -53,6 +53,9 @@ function Find-LastLogonLocation
     .PARAMETER UserName
         Username of account being searched
 
+    .PARAMETER GroupName
+        Search for all users in a given group instead of single user
+
     .PARAMETER Domain
         Domain to search for user in, if blank then defaults to current domain.
         NOTE: Requires DA privileges within target domain
@@ -71,16 +74,20 @@ function Find-LastLogonLocation
 
     .EXAMPLE
         Find-LastLogonLocation -UserName john.Smith
+        Find-LastLogonLocation -GroupName "Domain Admins"
         Find-LastLogonLocation -Domain dev.lab.local -UserName john.Smith.dev
-        Find-LastLogonLocation -UserName john.Smith -DomainController dc2.testlab.local
         Find-LastLogonLocation -UserName john.Smith -DomainController 127.0.0.1
         Find-LastLogonLocation -UserName john.Smith -SearchWindow 5
 #>
     [CmdletBinding()]
     Param(
-        [Parameter(Mandatory=$True, Position=1)]
+        [Parameter(Mandatory=$False, Position=1)]
         [String]
         $UserName,
+
+        [Parameter(Mandatory=$False)]
+        [String]
+        $GroupName,
 
         [Parameter(Mandatory=$False)]
         [String]
@@ -101,6 +108,13 @@ function Find-LastLogonLocation
 
     $DClist = New-Object System.Collections.ArrayList
     $LogonTimesList = New-Object System.Collections.ArrayList
+    $UserList = New-Object System.Collections.ArrayList
+
+    if ( ! $GroupName -and ! $UserName )
+    {
+        Write-Output "ERROR: Must specify either UserName or GroupName parameter"
+        exit
+    }
 
     if ( ! $Domain )
     {
@@ -109,7 +123,7 @@ function Find-LastLogonLocation
 
     if ( $DomainController )
     {
-        [void]$DClist.add(@{'Name' =$DomainController})
+        [void]$DClist.add(@{'Name' = $DomainController})
     }
     else 
     {
@@ -124,10 +138,27 @@ function Find-LastLogonLocation
         }
     }
     
+    if ( $UserName )
+    {
+        Get-NetUser -UserName $UserName -Domain $Domain | % { [Void]$UserList.add($_.SamAccountName) }
+    }
+    elseif ( $GroupName )
+    {
+        Get-NetGroupMember -GroupName $GroupName -Domain $Domain | % { [Void]$UserList.add($_.MemberName) }
+    }
+
     ForEach ($DC in $DClist)
     {
-        $timestamp = Get-NetUser -UserName $UserName -Domain $Domain -DomainController $DC.Name
-        [void]$LogonTimesList.add($timestamp.LastLogon)
+        $temp = New-Object System.Collections.ArrayList
+        
+        ForEach ( $UserName in $UserList )
+        {
+            $timestamp = Get-NetUser -UserName $UserName -Domain $Domain -DomainController $DC.Name
+            [void]$temp.add($timestamp.LastLogon)
+        }
+
+        [void]$LogonTimesList.add($temp)
+
     }
 
     for ( $i=0; $i -lt $DClist.count; $i++ )
@@ -137,64 +168,73 @@ function Find-LastLogonLocation
 
         Write-Output "`n$DC`:"
 
-        if ( $time )
+        # Loop through all users in the group
+        for ( $i2=0; $i2 -lt $UserList.count; $i2++ )
         {
-            $startT = (Get-Date $time).AddMinutes(-$SearchWindow).toString()
-            $endT = (Get-Date $time).AddMinutes($SearchWindow).toString()
+            $UserName = $UserList[$i2]
+            $UserTime = $time[$i2]
+        
+            Write-Output "`n$UserName`:"
 
-            try 
+            if ( $UserTime )
             {
-                $LogonEventsArray = Get-WinEvent -FilterHashTable @{logname='security'; id=@(4624,4768); StartTime=$startT; EndTime=$endT} -ComputerName $DC -ErrorAction SilentlyContinue | Where { ($_.Properties[5].value -match $UserName) -or ($_.Properties[0].value -match $UserName) }
-            }
-            catch
-            {
-                Write-Output "[!] Warning: Error while reaching RPC server, either you don't have access or  Remote Event Log Management is blocked by firewall.`n[!] Recommend elevating privleges or running function in -LocalOnly mode on DC directly"
-                continue
-            }
+                $startT = (Get-Date $UserTime).AddMinutes(-$SearchWindow).toString()
+                $endT = (Get-Date $UserTime).AddMinutes($SearchWindow).toString()
 
-            if ( $LogonEventsArray )
-            {
-                ForEach ( $LogonEvent in $LogonEventsArray )
+                try 
                 {
-                    if ( $FullData )
+                    $LogonEventsArray = Get-WinEvent -FilterHashTable @{logname='security'; id=@(4624,4768); StartTime=$startT; EndTime=$endT} -ComputerName $DC -ErrorAction SilentlyContinue | Where { ($_.Properties[5].value -match $UserName) -or ($_.Properties[0].value -match $UserName) }
+                }
+                catch
+                {
+                    Write-Output "[!] Warning: Error while reaching RPC server, either you don't have access or  Remote Event Log Management is blocked by firewall.`n[!] Recommend elevating privleges or running function on DC directly with parameter -DomainController 127.0.0.1"
+                    continue
+                }
+
+                if ( $LogonEventsArray )
+                {
+                    ForEach ( $LogonEvent in $LogonEventsArray )
                     {
-                        $LogonEvent.Message
-                    }
-                    # Format Logon Event Data
-                    elseif ( $LogonEvent.Properties[5].value -match $UserName )
-                    {
-                        $LogonEventProperties = @{
-                            'Domain' = $LogonEvent.Properties[6].value
-                            'Username' = $LogonEvent.Properties[5].value
-                            'User_SID' = $LogonEvent.Properties[4].value
-                            'IP' = $LogonEvent.Properties[18].value
-                            'LogonType' = $LogonEvent.Properties[8].value
-                            'Time' = $LogonEvent.TimeCreated
+                        if ( $FullData )
+                        {
+                            $LogonEvent.Message
                         }
-                        New-Object -TypeName PSObject -Property $LogonEventProperties
-                    }
-                    # Format TGT Event Data
-                    else
-                    {
-                        $LogonEventProperties = @{
-                            'Domain' = $LogonEvent.Properties[1].value
-                            'Username' = $LogonEvent.Properties[0].value
-                            'User_SID' = $LogonEvent.Properties[2].value
-                            'IP' = $LogonEvent.Properties[9].value
-                            'Time' = $LogonEvent.TimeCreated
+                        # Format Logon Event Data
+                        elseif ( $LogonEvent.Properties[5].value -match $UserName )
+                        {
+                            $LogonEventProperties = @{
+                                'Domain' = $LogonEvent.Properties[6].value
+                                'Username' = $LogonEvent.Properties[5].value
+                                'User_SID' = $LogonEvent.Properties[4].value
+                                'IP' = $LogonEvent.Properties[18].value
+                                'LogonType' = $LogonEvent.Properties[8].value
+                                'Time' = $LogonEvent.TimeCreated
+                            }
+                            New-Object -TypeName PSObject -Property $LogonEventProperties
                         }
-                        New-Object -TypeName PSObject -Property $LogonEventProperties
-                    } 
+                        # Format TGT Event Data
+                        else
+                        {
+                            $LogonEventProperties = @{
+                                'Domain' = $LogonEvent.Properties[1].value
+                                'Username' = $LogonEvent.Properties[0].value
+                                'User_SID' = $LogonEvent.Properties[2].value
+                                'IP' = $LogonEvent.Properties[9].value
+                                'Time' = $LogonEvent.TimeCreated
+                            }
+                            New-Object -TypeName PSObject -Property $LogonEventProperties
+                        } 
+                    }
+                }
+                else
+                {
+                    Write-Output "[!] WARNING: User $UserName last logged in via this DC on $UserTime, but no associated events were found"
                 }
             }
-            else
+            else 
             {
-                Write-Output "[!] WARNING: User $Username last logged in via this DC on $time, but no associated events were found"
+                Write-Output "[!] WARNING: No Recent logon events recorded for User $Username on this DC"
             }
-        }
-        else 
-        {
-            Write-Output "[!] WARNING: No Recent logon events recorded for User $Username on this DC"
         }
     }
 }
@@ -224,6 +264,7 @@ function List-LastLogonTime
 
     .EXAMPLE
         List-LastLogonTimes -UserName john.Smith
+        List-LastLogonTimes -GroupName john.Smith
         List-LastLogonTimes -Domain dev.lab.local -UserName john.Smith.dev
         List-LastLogonTimes -UserName john.Smith -SearchForest
 #>
@@ -303,7 +344,7 @@ function List-LastLogonTime
         exit
     }
     
-    Foreach ($user in $UserList)
+    ForEach ($user in $UserList)
     {
         Write-Output "`n$Domain\$user`:"
         ForEach ($DC in $DClist)
