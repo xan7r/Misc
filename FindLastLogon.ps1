@@ -350,7 +350,16 @@ function List-LastLogonTime
         ForEach ($DC in $DClist)
         {
             $DCName = $DC.Name
-            $timestamp = Get-NetUser -UserName $user -Domain $Domain -DomainController $DCName
+            try
+            {
+                $timestamp = Get-NetUser -UserName $user -Domain $Domain -DomainController $DCName
+            }
+            catch
+            {
+                Write-Output "$DCName`: Unable to contact DC, it may be offline"
+                continue
+            }
+            
             $LastLogon = $timestamp.LastLogon
 
             if ( $LastDay )
