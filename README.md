@@ -18,3 +18,17 @@ All AD helper functions used in this module were copied from Powerview.ps1 found
 Creates a persistent backdoor using WMI subscriptions.  Backdoor payload can be either stageless (stored in registry) or staged (HTTP(s) download cradle).  Payload will be executed whenever any user logs in or when process svchost.exe starts. Requires high integrity context to run.
 
 This module was heavily based on the code from https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/master/Persistence/Persistence.psm1 and https://raw.githubusercontent.com/xorrior/RandomPS-Scripts/master/WMIBackdoor.ps1
+
+
+## alwaysInstallElevated.wxs
+Template that can be used for abusing window's AlwaysInstallElevated Policy
+
+Instructions:  
+Change the first "ExeCommand" variable to desired command  
+Download the WiX Toolset Binaries  
+Compile alwaysInstallElevated.msi by running:  
+&nbsp;&nbsp;&nbsp;&nbsp;`candle alwaysInstallElevated.wxs`  
+&nbsp;&nbsp;&nbsp;&nbsp;`light alwaysInstallElevated.wixobj`  
+execute on target by running:  
+&nbsp;&nbsp;&nbsp;&nbsp;`alwaysInstallElevated.msi /q`  
+
