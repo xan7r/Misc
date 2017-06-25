@@ -335,7 +335,7 @@ function List-LastLogonTime
     }
     elseif ( $GroupName )
     {
-        Get-NetGroupMember -GroupName $UserName -Domain $Domain | % { [Void]$userList.add($_.MemberName) }
+        Get-NetGroupMember -GroupName $GroupName -Domain $Domain | % { [Void]$userList.add($_.MemberName) }
     }
 
     if ( $UserList.count -eq 0 )
