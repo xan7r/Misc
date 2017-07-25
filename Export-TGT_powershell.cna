@@ -8,9 +8,8 @@ sub grabTGT {
 
 on beacon_initial {
     $username = binfo($1, "user");
-    $pid = binfo($1, "pid");
     $hostname = binfo($1, "computer");
-    $note = binfo($1, "note");
+    $dnsCheck = binfo($1, "external");
 
     if ( -isadmin $1 )
     {
@@ -25,11 +24,12 @@ on beacon_initial {
         println("User: $username");
         println("RESULT: skipping because user's TGT has already been Exported.");
     }
-    else if ( "be evaluated" isin $note )
+    # skip grabbing TGT for DNS beacons 
+    else if ( $dnsCheck eq '' )
     {
         println("\nHost: $hostname");
         println("User: $username");
-        println("RESULT: skipping because likely DNS beacon based on note.");
+        println("RESULT: skipping because likely DNS beacon based on reported external IP address.");
     } 
     else
     {
