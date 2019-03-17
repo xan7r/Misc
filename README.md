@@ -1,7 +1,7 @@
 # Miscellaneous Pen Testing Scripts
 
 ## Invoke-Mimikatz.ps1
-Small modifications so its compatible with Cobalt Strike's Beacon. 
+Small modifications so its compatible with Cobalt Strike's beacon. 
 
 Original source: https://github.com/PowerShellEmpire/Empire/blob/master/data/module_source/credentials/Invoke-Mimikatz.ps1
 * Removed Architecture mismatch error
@@ -21,7 +21,7 @@ This module was heavily based on the code from https://raw.githubusercontent.com
 
 
 ## alwaysInstallElevated.wxs
-Template that can be used for abusing window's AlwaysInstallElevated Policy
+Template that can be used for abusing window's AlwaysInstallElevated policy
 
 Instructions:  
 1. Change the first "ExeCommand" variable to desired command  
@@ -33,8 +33,30 @@ Instructions:
 &nbsp;&nbsp;&nbsp;&nbsp;`alwaysInstallElevated.msi /q`  
 
 
-## Export-TGT.cna
-Cobalt Strike Aggressor script that automates exporting a user's Ticket Granting Ticket on initial beacon checkin.  All tickets will be saved locally to the operator's workstation in the cobaltstrike directory.  Note: This will not work in all environments since it requires the registry value HKLM:System\CurrentControlSet\Control\Lsa\Kerberos\Parameters\allowtgtsessionkey to be set to 1 on the victim host (registry value does not exist by default).
+## SaveTickets.cna
+Cobalt Strike aggressor script that integrates with [Rubeus](https://github.com/GhostPack/Rubeus) to automatically save kerberos tickets.  Currently designed to export tickets from the following Rubeus modules:
+* dump
+* tgtdeleg
+* monitor
+* asktgt
+* asktgs
+* renew
+* tgssub
+
+Tickets will be saved in binary format to /opt/tickets/\<date\>/\<ticketName\>.kirbi and in base64 format to /opt/tickets/\<date\>/tickets.txt.  Kirbi file can be used directly from `kerberos_ticket_use` command. 
+
+This script also adds the following commands to Cobalt Strike:
+* saveTGTall - Runs Rubeus command `dump /service:krbtgt`
+* saveTGTdeleg - Runs Rubeus command `tgtdeleg`
+* monitorTGT - Runs Rubeus command `monitor /interval:1`
+* loadTickets - Opens dialog box to select kirbi files.  Runs `kerberos_ticket_purge`, `rev2self`, then `kerberos_ticket_use <selected tickets>`
+
+Requires compiled version of Rubeus saved at /opt/Rubeus.exe (or other location if $RUBEUSLOCATION is modified).  
+**Note:** SaveTicket.cna was tested with Rubeus version 1.4.2
+
+
+## Export-TGT_powershell.cna/Export-TGT_standalone - NOW DEPRECIATED (use Rubeus version instead)
+Cobalt Strike aggressor script that automates exporting a user's Ticket Granting Ticket on initial beacon checkin.  All tickets will be saved locally to the operator's workstation in the cobaltstrike directory.  Note: This will not work in all environments since it requires the registry value HKLM:System\CurrentControlSet\Control\Lsa\Kerberos\Parameters\allowtgtsessionkey to be set to 1 on the victim host (registry value does not exist by default).
 
 This script comes in both standalone and PowerShell versions.  The standalone version (recommended) will use Cobalt Strike's built-in mimikatz module to dump tickets, whereas the PowerShell version will load the script Invoke-ExportTGT.ps1 (must be in same directory as Export-TGT_powershell.cna) to run Invoke-Mimikatz and parse the results.
 
@@ -47,3 +69,15 @@ Instructions:
 &nbsp;&nbsp;&nbsp;&nbsp;`base64 -d ./encodedTicket.txt > ./ticket.kirbi`  
 6. Import ticket.kirbi into another beacon if that access is lost:  
 &nbsp;&nbsp;&nbsp;&nbsp;`kerberos_ticket_use /opt/cobaltstrike/ticket.kirbi`  
+
+
+## Export-TGT_Rubeus.cna
+Cobalt Strike aggressor script that automates exporting a user's Ticket Granting Ticket on initial beacon checkin.  All tickets will be saved locally to the operator's workstation.  Note: This uses the Rubeus tgtdeleg module, which attempts to obtain usable TGT without elevation by requesting Service Ticket for host with unconstrained delegation enabled (default is domain controller).
+
+Instructions:
+1. Compile Rubeus and place at /opt/Rubeus.exe (or other location and modify $RUBEUSLOCATION in Export-TGT_Rubeus.cna)  
+2. Load BOTH SaveTickets.cna and Export-TGT_Rubeus.cna  
+3. As beacons come in, the Rubeus tgtdeleg command will be run and tickets will be saved to /opt/tickets/ (or other location if $TICKETSFILEPATH in SaveTickets.cna is changed)  
+4. Use ticket with either command:  
+&nbsp;&nbsp;&nbsp;&nbsp;`loadTickets`  
+&nbsp;&nbsp;&nbsp;&nbsp;`kerberos_ticket_use /opt/cobaltstrike/<ticket>.kirbi`   
