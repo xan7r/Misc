@@ -24,11 +24,11 @@ alias loadTickets {
     $bid = $1;
     $defaultDir = $lastTicket;
 
-    prompt_file_open("Select kerberos ticket(s) to restore", $defaultDir, true, {
-        brev2self($bid);
-        bkerberos_ticket_purge($bid);
-        importTickets($1, $bid);
-    } );
+    prompt_file_open("Select kerberos ticket(s) to restore", $defaultDir, true, lambda({
+        brev2self($lambdaBid);
+        bkerberos_ticket_purge($lambdaBid);
+        importTickets($1, $lambdaBid);
+    }, $lambdaBid => $bid));
 }
 
 alias monitorTGT {
