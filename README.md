@@ -42,6 +42,8 @@ Cobalt Strike aggressor script that integrates with [Rubeus](https://github.com/
 * asktgs
 * renew
 * tgssub
+* kerberoast
+* asreproast
 
 Tickets will be saved in binary format to /opt/tickets/\<date\>/\<ticketName\>.kirbi and in base64 format to /opt/tickets/\<date\>/tickets.txt.  Kirbi file can be used directly from `kerberos_ticket_use` command. 
 
