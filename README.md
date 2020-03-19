@@ -54,7 +54,8 @@ This script also adds the following commands to Cobalt Strike:
 * loadTickets - Opens dialog box to select kirbi files.  Runs `kerberos_ticket_purge`, `rev2self`, then `kerberos_ticket_use <selected tickets>`
 
 Requires compiled version of Rubeus saved at /opt/Rubeus.exe (or other location if $RUBEUSLOCATION is modified).  
-**Note:** SaveTicket.cna was tested with Rubeus version 1.4.2
+**Note:** SaveTickets.cna was tested with Rubeus version 1.5.0  
+**Note:** Use SaveTickets-v1.4.cna for compaitiblity with older versions of Rubeus.  This is due to changes in the output of the dump and monitor modules in Rubeus 1.5.0  
 
 
 ## Export-TGT_powershell.cna/Export-TGT_standalone - NOW DEPRECIATED (use Rubeus version instead)
