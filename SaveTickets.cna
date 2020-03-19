@@ -533,7 +533,7 @@ on beacon_output {
     $bid = $1;
     $checkRubeusPatternDump = "Action: Dump Kerberos Ticket Data ("; # pattern to search for Rubeus dump module output
     $checkRubeusPatternDump2 = "[+] Successfully decrypted the authenticator"; # pattern to search for Rubeus tgtdeleg module
-    $checkRubeusPatternDump3 = "  ServiceName              : krbtgt/";
+    $checkRubeusPatternDump3 = "    ServiceName           :  krbtgt/"; # alternative pattern to search for Rubeus dump module output.  Used when tickets come back in multiple chunks
     $checkRubeusPatternAsk = "[*] Action: Ask TG"; # pattern to search for Rubeus asktgt or asktgs modules
     $checkRubeusPatternAsk2 = "[*] Action: Service Ticket sname Substitution"; # pattern to search for Rubeus tgssub module
     $checkRubeusPatternAsk3 = "[+] TGT renewal request successful!"; # pattern to search for Rubeus renew module
