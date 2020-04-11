@@ -34,7 +34,9 @@ Instructions:
 
 
 ## SaveTickets.cna
-Cobalt Strike aggressor script that integrates with [Rubeus](https://github.com/GhostPack/Rubeus) to automatically save kerberos tickets.  Currently designed to export tickets from the following Rubeus modules:
+Cobalt Strike aggressor script that integrates with [Rubeus](https://github.com/GhostPack/Rubeus) and [kekeo](https://github.com/gentilkiwi/kekeo) to automatically save kerberos tickets to operator's workstation.  Currently designed to parse output from the following modules:
+
+**Rubeus:**
 * dump
 * tgtdeleg
 * monitor
@@ -45,17 +47,23 @@ Cobalt Strike aggressor script that integrates with [Rubeus](https://github.com/
 * kerberoast
 * asreproast
 
+**kekeo:**
+* tgt::asreq
+* tgt::ask
+* tgt::deleg
+* tgs::ask
+
 Tickets will be saved in binary format to /opt/tickets/\<date\>/\<ticketName\>.kirbi and in base64 format to /opt/tickets/\<date\>/tickets.txt.  Kirbi file can be used directly from `kerberos_ticket_use` command. 
 
 This script also adds the following commands to Cobalt Strike:
 * saveTGTall - Runs Rubeus command `dump /service:krbtgt`
 * saveTGTdeleg - Runs Rubeus command `tgtdeleg`
 * monitorTGT - Runs Rubeus command `monitor /interval:1`
-* loadTickets - Opens dialog box to select kirbi files.  Runs `kerberos_ticket_purge`, `rev2self`, then `kerberos_ticket_use <selected tickets>`
+* loadTickets - Opens dialog box to select kirbi files.  Runs `kerberos_ticket_purge`, `rev2self`, then `kerberos_ticket_use <selected tickets>`  
 
-Requires compiled version of Rubeus saved at /opt/Rubeus.exe (or other location if $RUBEUSLOCATION is modified).  
-**Note:** SaveTickets.cna was tested with Rubeus version 1.5.0  
-**Note:** Use SaveTickets-v1.4.cna for compaitiblity with older versions of Rubeus.  This is due to changes in the output of the dump and monitor modules in Rubeus 1.5.0  
+**Note:** These commands require a compiled version of Rubeus saved at /opt/Rubeus.exe (or other location if $RUBEUSLOCATION is modified).  
+
+SaveTickets.cna was tested with Rubeus version **1.5.0**  and kekeo version **2.2.0-20191201**.  Use SaveTickets-v1.4.cna for compaitiblity with older versions of Rubeus.  This is due to changes in the output of the dump and monitor modules in Rubeus 1.5.0  
 
 
 ## Export-TGT_powershell.cna/Export-TGT_standalone - NOW DEPRECIATED (use Rubeus version instead)
