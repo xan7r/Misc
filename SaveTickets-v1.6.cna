@@ -25,7 +25,7 @@ alias loadTickets {
     $defaultDir = $lastTicket;
 
     prompt_file_open("Select kerberos ticket(s) to restore", $defaultDir, true, lambda({
-        #brev2self($lambdaBid);
+        brev2self($lambdaBid);
         bkerberos_ticket_purge($lambdaBid);
         importTickets($1, $lambdaBid);
     }, $lambdaBid => $bid));
@@ -125,14 +125,14 @@ sub parseRubeusDump {
     $kerbTickets = $2;
     $ticketStartPattern = "Base64EncodedTicket   :\r\n\r\n";
     $ticketEndPattern = "\r\n\r\n";
-    $usernameStartPattern = "UserName                 :  ";
-    $usernameEndPattern =   "UserRealm                :  ";
-    $keyTypeStartPattern =  "KeyType                  :  ";
-    $keyTypeEndPattern =    "Base64(key)              :  ";
-    $endTimeStartPattern =  "EndTime                  :  ";
-    $endTimeEndPattern =    "RenewTill                :  ";
-    $serviceStartPattern =  "ServiceName              :  ";
-    $serviceEndPattern =    "ServiceRealm             :  ";
+    $usernameStartPattern = "UserName              :  ";
+    $usernameEndPattern =   "UserRealm             :  ";
+    $keyTypeStartPattern =  "KeyType               :  ";
+    $keyTypeEndPattern =    "Base64(key)           :  ";
+    $endTimeStartPattern =  "EndTime               :  ";
+    $endTimeEndPattern =    "RenewTill             :  ";
+    $serviceStartPattern =  "ServiceName           :  ";
+    $serviceEndPattern =    "ServiceRealm          :  ";
     $counter = 1;
 
     while ( $counter < 500 ) # avoid infinite loops
@@ -373,15 +373,16 @@ sub parseRubeusAsk {
     $kerbTickets = $2;
     $ticketStartPattern = "[*] base64(ticket.kirbi):\r\n\r\n";
     $ticketEndPattern = "\r\n\r\n";
-    $usernameStartPattern = "UserName                 : ";
-    $usernameEndPattern = "UserRealm                : ";
-    $keyTypeStartPattern = "KeyType                  : ";
-    $keyTypeEndPattern = "Base64(key)              : ";
-    $endTimeStartPattern = "EndTime                  : ";
-    $endTimeEndPattern = "RenewTill                : ";
-    $serviceStartPattern = "ServiceName              : ";
-    $serviceEndPattern = "ServiceRealm             : ";
+    $usernameStartPattern = "UserName              : ";
+    $usernameEndPattern = "UserRealm             : ";
+    $keyTypeStartPattern = "KeyType               : ";
+    $keyTypeEndPattern = "Base64(key)           : ";
+    $endTimeStartPattern = "EndTime               : ";
+    $endTimeEndPattern = "RenewTill             : ";
+    $serviceStartPattern = "ServiceName           : ";
+    $serviceEndPattern = "ServiceRealm          : ";
     $counter = 1;
+
 
     while ( $counter < 100 ) # avoid infinite loops
     {
@@ -611,10 +612,8 @@ on beacon_output {
     $checkRubeusPatternDump2 = "[+] Successfully decrypted the authenticator"; # pattern to search for Rubeus tgtdeleg module
     $checkRubeusPatternDump3 = "    ServiceName           :  krbtgt/"; # alternative pattern to search for Rubeus dump module output.  Used when tickets come back in multiple chunks
     $checkRubeusPatternAsk = "[*] Action: Ask TG"; # pattern to search for Rubeus asktgt or asktgs modules
-    # tgssub no longer supported in 2.0
-    #$checkRubeusPatternAsk2 = "[*] Action: Service Ticket sname Substitution"; # pattern to search for Rubeus tgssub module
+    $checkRubeusPatternAsk2 = "[*] Action: Service Ticket sname Substitution"; # pattern to search for Rubeus tgssub module
     $checkRubeusPatternAsk3 = "[+] TGT renewal request successful!"; # pattern to search for Rubeus renew module
-    $checkRubeusPatternAsk4 = "[*] Using PKINIT "; # pattern to search for Rubeus asktgt with certificates
     $checkRubeusPatternMonitor = " - Found new TGT:"; # pattern to search for monitor module
     $s4uPattern = "[*] Action: S4U"; # ignore tickets from Rubeus s4u module
     $checkUnknownTicketPattern = "[*] base64(ticket.kirbi):"; # sometimes cobalt strike output is sent in unexpected chunks, epecially at sleep 0.  This pattern is to make sure ticket gets saved even if we don't know which Rubeus module it comes from.
@@ -625,7 +624,6 @@ on beacon_output {
     $checkMimikatzPattern1 = "\nBase64 of file : ";
     $checkMimikatzPattern2 = "\n====================\n";
     $beaconOutput = replace($2, "received output:\n", "");
-
 
     if ($s4uPattern isin $beaconOutput)
     {
@@ -643,11 +641,11 @@ on beacon_output {
     {
         parseRubeusCatchAll($bid, $beaconOutput, "TGTDELEG");
     }
-    else if ( ($checkRubeusPatternAsk isin $beaconOutput) || ($checkRubeusPatternAsk4 isin $beaconOutput) )
+    else if ( ($checkRubeusPatternAsk isin $beaconOutput) ||  ($checkRubeusPatternAsk2 isin $beaconOutput) )
     {
         parseRubeusAsk($bid, $beaconOutput);
     }
-    else if ($checkRubeusPatternDump3 isin $beaconOutput)
+    else if ($checkRubeusPatternDump3 isin $beaconOutput) 
     {
         parseRubeusDump($bid, $beaconOutput);
     }

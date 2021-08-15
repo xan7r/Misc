@@ -11,7 +11,6 @@ Cobalt Strike aggressor script that integrates with [Rubeus](https://github.com/
 * asktgt
 * asktgs
 * renew
-* tgssub
 * kerberoast
 * asreproast
 
@@ -35,11 +34,11 @@ This script also adds the following commands to Cobalt Strike:
 * saveTGTall - Runs Rubeus command `dump /service:krbtgt`
 * saveTGTdeleg - Runs Rubeus command `tgtdeleg`
 * monitorTGT - Runs Rubeus command `monitor /interval:1`
-* loadTickets - Opens dialog box to select kirbi files.  Runs `kerberos_ticket_purge`, `rev2self`, then `kerberos_ticket_use <selected tickets>`  
+* loadTickets - Opens dialog box to select kirbi files.  Runs `kerberos_ticket_purge`, then `kerberos_ticket_use <selected tickets>`  
 
 **Note:** These commands require a compiled version of Rubeus saved at /opt/Rubeus.exe (or other location if $RUBEUSLOCATION is modified).  
 
-SaveTickets.cna was tested with Rubeus version **1.5.0**, kekeo version **2.2.0-20191201**, and mimikatz version **2.2.0 20200208**.  Use SaveTickets-v1.4.cna for compaitiblity with older versions of Rubeus.  This is due to changes in the output of the dump and monitor modules in Rubeus 1.5.0  
+SaveTickets.cna was tested with Rubeus version **2.0.0**, kekeo version **2.2.0-20191201**, and mimikatz version **2.2.0 20200208**.  Use SaveTickets-v1.6 for compatibility with Rubeus 1.5.0-1.6.3 or SaveTickets-v1.4.cna for compatibility with older versions of Rubeus.  This is due to changes in the output format of tickets in Rubeus 1.5.0 and 2.0.0  
 
 
 ## Export-TGT_Rubeus.cna
